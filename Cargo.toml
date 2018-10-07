@@ -1,0 +1,6 @@
+[package]
+name = "re_animatr"
+version = "0.1.0"
+authors = ["Kristofer Jarl <kristofer.jarl@gmail.com>"]
+
+[dependencies]
