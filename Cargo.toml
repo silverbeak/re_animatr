@@ -1,6 +1,13 @@
 [package]
 name = "re_animatr"
 version = "0.1.0"
-authors = ["Kristofer Jarl <kristofer.jarl@gmail.com>"]
+authors = ["Kristofer Jarl <kristofer.jarl@trollmoj.com>"]
+license = "MIT"
+description = "A re-inflatable buffer library"
+repository = "https://github.com/silverbeak/re_animatr"
 
 [dependencies]
+
+[lib]
+name = "re_animatr"
+path = "src/lib.rs"
