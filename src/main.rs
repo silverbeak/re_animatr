@@ -4,7 +4,7 @@ pub mod re_animatr {
     use std::collections::HashMap;
     use std::fmt::Display;
     use std::hash::Hash;
-    use std::sync::mpsc::{Receiver, Sender, channel};
+    use std::sync::mpsc::{channel, Receiver, Sender};
     use std::sync::{Arc, Mutex};
     use std::thread;
     use std::time::{Duration, SystemTime};
@@ -28,8 +28,17 @@ pub mod re_animatr {
     where
         Key: Eq + Hash + Sync + Send + Display + PartialEq + Clone + 'static,
     {
-        pub fn add(&mut self, key: Key) -> Option<SystemTime> {
-            self.map.lock().unwrap().insert(key, SystemTime::now())
+        pub fn add(&mut self, key: Key) {
+            self.map
+                .lock()
+                .unwrap()
+                .entry(key)
+                .and_modify(|x| *x = SystemTime::now())
+                .or_insert(SystemTime::now());
+        }
+
+        pub fn len(&self) -> usize {
+            self.map.lock().unwrap().len()
         }
 
         fn start(&self)
@@ -98,8 +107,9 @@ pub mod re_animatr {
 mod tests {
     use super::*;
 
-    use std::time::Duration;
     use re_animatr::TTLBuffer;
+    use std::thread;
+    use std::time::Duration;
 
     #[test]
     fn test_new() {
@@ -112,18 +122,18 @@ mod tests {
     fn test_add() {
         let mut buf: TTLBuffer<&str> =
             re_animatr::new(Duration::from_millis(32), Duration::from_millis(500));
-        assert_eq!(buf.add("xxx"), None);
+        buf.add("xxx");
     }
 
     #[test]
     fn test_receive() {
         let mut buf: TTLBuffer<&str> =
             re_animatr::new(Duration::from_millis(320), Duration::from_millis(50));
-        assert_eq!(buf.add("xxx"), None);
+        buf.add("xxx");
         let t = buf.receiver.recv().unwrap();
         assert_eq!("xxx", t);
 
-        assert_eq!(buf.add("yyy"), None);
+        buf.add("yyy");
         let t = buf.receiver.recv().unwrap();
         assert_eq!("yyy", t);
     }
@@ -132,8 +142,8 @@ mod tests {
     fn test_receive2() {
         let mut buf: TTLBuffer<&str> =
             re_animatr::new(Duration::from_millis(320), Duration::from_millis(50));
-        assert_eq!(buf.add("xxx"), None);
-        assert_eq!(buf.add("yyy"), None);
+        buf.add("xxx");
+        buf.add("yyy");
 
         let mut responses = vec![];
 
@@ -144,5 +154,30 @@ mod tests {
 
         let filtered = responses.iter().filter(|&r| r == &"xxx" || r == &"yyy");
         assert_eq!(filtered.size_hint(), (0, Some(2)));
+    }
+
+    #[test]
+    fn test_update() {
+        let mut buf: TTLBuffer<&str> =
+            re_animatr::new(Duration::from_millis(100), Duration::from_millis(10));
+
+        let mut responses = vec![];
+
+        buf.add("xxx"); // Add an entry with key "xxx"
+        buf.add("yyy"); // Add an entry with key "yyy"
+        thread::sleep(Duration::from_millis(80)); // Wait for some part of the timeout
+        assert_eq!(buf.len(), 2); // Make sure the values are still in the buffer
+
+        buf.add("xxx"); // Update the "xxx" entry we created above, note that we don't update the "yyy" entry
+        thread::sleep(Duration::from_millis(80)); // Sleep for the duration of "yyy", but not "xxx", since that was updated
+        assert_eq!(buf.len(), 1); // There should now be only one value in the buffer
+
+        responses.push(buf.receiver.recv().unwrap()); // Receive the "yyy" entry and store it in responses vector
+        assert_eq!("yyy", responses[0]); // Make sure that it was really "yyy" that we received
+
+        thread::sleep(Duration::from_millis(80)); // Sleep for the reminder of the "xxx" timeout
+        responses.push(buf.receiver.recv().unwrap()); // Receive the "xxx" entry and store it in the buffer
+        assert_eq!(buf.len(), 0); // Make sure that the buffer is empty (both entries have been sent)
+        assert_eq!("xxx", responses[1]); // Make sure that it was really "xxx" that we received
     }
 }
